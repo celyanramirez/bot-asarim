@@ -32,6 +32,7 @@ bot = commands.Bot(command_prefix=prefix, intents=intents, help_command=None)
 async def on_ready():
     await update_audio_list()
     schedule.every(24).hours.do(shuffle_audio_list)
+    await shuffle_audio_list()
     print("J'suis prêt radio !")
     
 @bot.event
@@ -50,6 +51,7 @@ async def on_voice_state_update(member, before, after):
 audio_directory = "musiques"
 audio_files = []
 join_activated = False
+current_track_index = 0
 
 async def update_audio_list():
     global audio_files
@@ -61,6 +63,7 @@ async def shuffle_audio_list():
 
 @bot.command()
 async def join(ctx):
+    global current_track_index
     try:
         channel = ctx.message.author.voice.channel
         join_activated = True
@@ -70,11 +73,14 @@ async def join(ctx):
 
 @bot.command()
 async def leave(ctx):
+    global current_track_index
     if ctx.voice_client:
+        current_track_index = (current_track_index + 1) % len(audio_files)
         await ctx.voice_client.disconnect()
 
 @bot.command()
 async def play(ctx):
+    global current_track_index
     try:
         if not ctx.voice_client:
             await ctx.send("Je ne suis pas connecté à un canal vocal. Utilisez la commande $join pour que je rejoigne un canal.")
@@ -87,7 +93,7 @@ async def play(ctx):
 
         while True:
             for i in range(len(audio_files)):
-                audio_file = os.path.join(audio_directory, audio_files[i])
+                audio_file = os.path.join(audio_directory, audio_files[current_track_index])
 
                 # Vérifier si le fichier existe avant de le lire
                 if not os.path.isfile(audio_file):
@@ -97,7 +103,7 @@ async def play(ctx):
                 # Lire le fichier audio avec discord.FFmpegPCMAudio
                 ctx.voice_client.play(discord.FFmpegPCMAudio(source=audio_file))
 
-                filename, file_extension = os.path.splitext(audio_files[i])
+                filename, file_extension = os.path.splitext(audio_files[current_track_index])
                 nom_mix = filename
                 await ctx.send(f"Passons maintenant au {nom_mix} !")
                 await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name=f"le {nom_mix} 🎵"))
@@ -106,8 +112,23 @@ async def play(ctx):
                 while ctx.voice_client.is_playing():
                     await asyncio.sleep(1)
 
+                if current_track_index == len(audio_files) - 1:
+                    await shuffle_audio_list()
+                    current_track_index = 0 
+                else:
+                    current_track_index = (current_track_index + 1) % len(audio_files)
+
     except Exception as e:
         print(e)
+
+@bot.command()
+@commands.has_permissions(ban_members = True)
+async def skip(ctx):
+    global current_track_index
+    if ctx.voice_client and ctx.voice_client.is_playing():
+        ctx.voice_client.stop()
+        current_track_index = (current_track_index + 1) % len(audio_files)
+        await play(ctx)
 
 @bot.command()
 @commands.has_permissions(ban_members = True)
